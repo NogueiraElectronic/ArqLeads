@@ -160,35 +160,38 @@ async def send_message(
             for msg in messages
         ]
         
-        # Check if we should use a template response
-        template_response = chat_service.get_next_question(lead, conversation)
-        
-        if template_response:
-            assistant_response = template_response
+        # Generate AI response (always use AI, no rigid templates)
+        try:
+            # Prepare comprehensive context for AI
+            context = {
+                "project_type": lead.project_type.value if lead.project_type else None,
+                "budget": lead.budget,
+                "timeline": lead.timeline,
+                "location": lead.location,
+                "name": lead.name,
+                "email": lead.email,
+                "phone": lead.phone,
+                "lead_score": lead.score,
+                "lead_category": lead.category.value if lead.category else None,
+                "has_budget": lead.has_budget,
+                "has_timeline": lead.has_timeline,
+                "has_location": lead.has_location,
+                "contact_complete": lead.contact_complete,
+            }
+
+            assistant_response, tokens_used, processing_time = await chat_service.generate_response(
+                conversation_history,
+                context=context
+            )
+        except Exception as e:
+            logger.error(f"Error generating AI response: {e}")
+            assistant_response = MessageTemplate.format(
+                MessageTemplate.ERROR,
+                contact_email=settings.NOTIFICATION_EMAILS[0] if settings.NOTIFICATION_EMAILS else "contacto@estudio.com",
+                contact_phone="N/A"
+            )
             tokens_used = 0
             processing_time = 0
-        else:
-            # Generate AI response
-            try:
-                assistant_response, tokens_used, processing_time = await chat_service.generate_response(
-                    conversation_history,
-                    context={
-                        "project_type": lead.project_type.value if lead.project_type else None,
-                        "budget": lead.budget,
-                        "timeline": lead.timeline,
-                        "location": lead.location,
-                        "score": lead.score,
-                    }
-                )
-            except Exception as e:
-                logger.error(f"Error generating AI response: {e}")
-                assistant_response = MessageTemplate.format(
-                    MessageTemplate.ERROR,
-                    contact_email=settings.NOTIFICATION_EMAILS[0],
-                    contact_phone="N/A"
-                )
-                tokens_used = 0
-                processing_time = 0
         
         # Save assistant message
         assistant_message = Message(
