@@ -1,0 +1,39 @@
+# Archivos de entorno - CRÍTICO
+.env
+*.env
+Backend/.env
+Backend/**/.env
+frontend/.env
+
+# Dependencias
+node_modules/
+venv/
+.venv/
+Backend/venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+logs/
+*.log
+
+# Uploads (archivos subidos por usuarios)
+uploads/
+Backend/uploads/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Build
+dist/
+build/
+*.egg-info/
