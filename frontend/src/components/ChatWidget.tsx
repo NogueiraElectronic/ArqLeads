@@ -19,7 +19,7 @@ export default function ChatWidget() {
   const [leadScore, setLeadScore] = useState(0);
   const [leadCategory, setLeadCategory] = useState('cold');
   
-  const messagesEndRef = useRef(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -29,7 +29,7 @@ export default function ChatWidget() {
     scrollToBottom();
   }, [messages]);
 
-  const getCategoryColor = (category) => {
+  const getCategoryColor = (category: string) => {
     switch(category) {
       case 'hot': return 'text-red-600';
       case 'warm': return 'text-orange-600';
@@ -37,7 +37,7 @@ export default function ChatWidget() {
     }
   };
 
-  const getCategoryLabel = (category) => {
+  const getCategoryLabel = (category: string) => {
     switch(category) {
       case 'hot': return '🔥 Lead Caliente';
       case 'warm': return '⚡ Lead Tibio';
@@ -45,7 +45,7 @@ export default function ChatWidget() {
     }
   };
 
-  const sendMessage = async (e) => {
+  const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
