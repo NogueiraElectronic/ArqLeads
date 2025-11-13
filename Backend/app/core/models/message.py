@@ -89,89 +89,88 @@ class Message(Base):
 
 class MessageTemplate:
     """Predefined message templates for the chatbot."""
-    
-    WELCOME = """¡Hola! 👋 Soy {bot_name}, el asistente virtual de {studio_name}.
 
-Estoy aquí para ayudarte con tu proyecto de arquitectura. ¿En qué tipo de proyecto estás pensando?"""
-    
-    PROJECT_TYPE_OPTIONS = """Puedo ayudarte con:
+    WELCOME = """Buenos días. Soy {bot_name}, asistente virtual de {studio_name}.
 
-🏠 **Vivienda unifamiliar** - Casa nueva o proyecto personalizado
-🏢 **Reforma de piso** - Renovación integral o parcial
-🏗️ **Obra nueva** - Construcción desde cero
-🔧 **Rehabilitación** - Restauración de edificios
-🏪 **Local comercial** - Diseño de espacios comerciales
-📋 **Consulta técnica** - Asesoramiento profesional
+¿En qué tipo de proyecto de arquitectura estás trabajando?"""
 
-¿Cuál se ajusta más a lo que necesitas?"""
-    
-    BUDGET_QUESTION = """Perfecto, entiendo que estás interesado en {project_type}.
+    PROJECT_TYPE_OPTIONS = """Trabajamos en diversos tipos de proyectos:
 
-Para poder ayudarte mejor, ¿qué presupuesto aproximado tienes en mente? 
-(No te preocupes, es solo para orientación inicial)"""
-    
-    TIMELINE_QUESTION = """Gracias por la información.
+- Vivienda unifamiliar: diseño de casa nueva o personalización
+- Reforma de piso: renovación integral o parcial
+- Obra nueva: construcción completa desde cero
+- Rehabilitación: restauración y actualización de edificios
+- Local comercial: diseño de espacios comerciales y oficinas
+- Consulta técnica: asesoramiento profesional específico
 
-¿Cuándo te gustaría comenzar con el proyecto?
+¿Cuál describe mejor tu necesidad?"""
 
-⚡ **En los próximos 3 meses**
-📅 **Entre 3-6 meses**
-🗓️ **Entre 6-12 meses**
-💭 **Solo estoy explorando opciones**"""
-    
-    LOCATION_QUESTION = """¿En qué zona de {studio_location} sería el proyecto?"""
-    
-    CONTACT_REQUEST = """¡Excelente! Tu proyecto suena muy interesante.
+    BUDGET_QUESTION = """Entendido. En cuanto a {project_type}, me ayudaría conocer el rango de inversión que tienes previsto. Esto nos permitirá dimensionar correctamente el alcance y los acabados viables.
 
-Para que un arquitecto pueda contactarte y ofrecerte un presupuesto detallado, necesito algunos datos:
+¿Has definido ya un presupuesto aproximado?"""
 
-📧 **Email**
-📱 **Teléfono**
-👤 **Nombre**
+    TIMELINE_QUESTION = """Respecto al calendario del proyecto, ¿tienes una temporalidad definida?
 
-¿Me los puedes facilitar?"""
-    
-    HOT_LEAD_RESPONSE = """¡Perfecto, {name}! 🎉
+- Próximos 3 meses: inicio inmediato
+- Entre 3-6 meses: planificación media
+- Entre 6-12 meses: planificación extendida
+- Fase exploratoria: aún evaluando opciones
 
-Tu proyecto es exactamente el tipo de trabajo que nos apasiona. Un arquitecto de {studio_name} se pondrá en contacto contigo en las **próximas 24 horas** para:
+¿Cuál se ajusta mejor a tu situación?"""
 
-✅ Analizar tu proyecto en detalle
-✅ Ofrecerte un presupuesto personalizado
-✅ Resolver todas tus dudas
+    LOCATION_QUESTION = """¿En qué zona de {studio_location} se situaría el proyecto? La ubicación es relevante para evaluar aspectos de normativa local y accesibilidad."""
 
-¿Cuál es el mejor horario para llamarte?"""
-    
-    WARM_LEAD_RESPONSE = """¡Gracias por tu interés, {name}! 😊
+    CONTACT_REQUEST = """Gracias por la información compartida. El proyecto presenta características interesantes.
 
-Hemos registrado tu proyecto y un arquitecto revisará la información. Te contactaremos próximamente para:
+Para que un arquitecto del equipo pueda contactarte directamente y elaborar una propuesta detallada, necesitaré:
 
-📋 Evaluar tu proyecto
-💰 Preparar un presupuesto orientativo
-📞 Coordinar una reunión
+- Email de contacto
+- Teléfono
+- Nombre
 
-¿Hay algo más que quieras añadir sobre tu proyecto?"""
-    
-    COLD_LEAD_RESPONSE = """¡Gracias por contactar con {studio_name}! 😊
+¿Puedes facilitarme estos datos?"""
 
-Entiendo que estás en fase de exploración. Te enviaremos información sobre nuestros servicios y proyectos realizados.
+    HOT_LEAD_RESPONSE = """Perfecto, {name}. He registrado toda la información del proyecto.
 
-Cuando tengas más claro tu proyecto, ¡estaremos encantados de ayudarte!
+Un arquitecto de {studio_name} se pondrá en contacto contigo en las próximas 24 horas laborables para:
 
-¿Quieres que te enviemos nuestro portfolio?"""
-    
-    GOODBYE = """¡Hasta pronto! 👋
+- Analizar los detalles técnicos del proyecto
+- Elaborar un presupuesto personalizado
+- Resolver cualquier consulta técnica
 
-Si tienes más preguntas, no dudes en volver. Estaremos encantados de ayudarte.
+¿Tienes preferencia de horario para la llamada?"""
 
-{studio_name} - Tu proyecto, nuestra pasión."""
-    
-    ERROR = """Lo siento, he tenido un problema técnico. 😔
+    WARM_LEAD_RESPONSE = """Gracias por tu interés, {name}.
 
-¿Podrías repetir tu mensaje?
+Hemos registrado la información del proyecto. Un arquitecto la revisará y te contactaremos próximamente para:
 
-Si el problema persiste, puedes contactarnos directamente en:
-📧 {contact_email}
-📱 {contact_phone}"""
+- Evaluar la viabilidad técnica
+- Preparar un presupuesto orientativo
+- Coordinar una reunión si procede
+
+¿Hay algún detalle adicional sobre el proyecto que quieras mencionar?"""
+
+    COLD_LEAD_RESPONSE = """Gracias por contactar con {studio_name}.
+
+Entiendo que estás en fase inicial de evaluación. Te enviaremos información sobre nuestros servicios y algunos proyectos de referencia que puedan resultarte útiles.
+
+Cuando tengas más definido el proyecto, estaremos disponibles para asesorarte.
+
+¿Te interesaría recibir nuestro portfolio de proyectos ejecutados?"""
+
+    GOODBYE = """Hasta pronto.
+
+Si tienes más consultas sobre el proyecto, puedes volver a contactar cuando lo necesites.
+
+{studio_name} - Arquitectura profesional"""
+
+    ERROR = """Disculpa, he experimentado un error técnico.
+
+¿Podrías repetir tu último mensaje?
+
+Si el problema persiste, contacta directamente con el estudio:
+Email: {contact_email}
+Teléfono: {contact_phone}"""
     
     @classmethod
     def format(cls, template: str, **kwargs) -> str:

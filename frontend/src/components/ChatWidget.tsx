@@ -9,7 +9,7 @@ export default function ChatWidget() {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: '¡Hola! 👋 Soy el asistente virtual de tu estudio de arquitectura. ¿En qué proyecto estás pensando?',
+      content: 'Buenos días. Soy el asistente virtual de tu estudio de arquitectura. ¿En qué tipo de proyecto estás trabajando?',
       timestamp: new Date().toISOString()
     }
   ]);
@@ -39,9 +39,9 @@ export default function ChatWidget() {
 
   const getCategoryLabel = (category) => {
     switch(category) {
-      case 'hot': return '🔥 Lead Caliente';
-      case 'warm': return '⚡ Lead Tibio';
-      default: return '❄️ Lead Frío';
+      case 'hot': return 'Lead Caliente';
+      case 'warm': return 'Lead Tibio';
+      default: return 'Lead Frío';
     }
   };
 
@@ -81,7 +81,7 @@ export default function ChatWidget() {
       console.error('Error sending message:', error);
       const errorMessage = {
         role: 'assistant',
-        content: 'Lo siento, hubo un error. Por favor, intenta de nuevo.',
+        content: 'Disculpa, se ha producido un error de conexión. Por favor, intenta enviar el mensaje de nuevo.',
         timestamp: new Date().toISOString()
       };
       setMessages(prev => [...prev, errorMessage]);
