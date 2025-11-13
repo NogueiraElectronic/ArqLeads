@@ -228,25 +228,36 @@ Recuerda: Tu objetivo es conseguir suficiente información para que un arquitect
     def _extract_budget(self, text: str, lead: Lead) -> None:
         """Extract budget from text using regex."""
         patterns = [
-            r'(\d{1,3}(?:[.,]\d{3})*)\s*€',
-            r'(\d+)k\s*€',
-            r'€\s*(\d{1,3}(?:[.,]\d{3})*)',
-            r'(\d+)\s*mil\s*€',
+            # Con símbolos de moneda
+            r'(\d{1,3}(?:[.,]\d{3})*)\s*[€$]',
+            r'[€$]\s*(\d{1,3}(?:[.,]\d{3})*)',
+            # Con palabras (euros, eur, dólares, etc.)
+            r'(\d{1,3}(?:[.,]\d{3})*)\s*(?:euros?|eur|dólares?|usd|dolares?)',
+            # Con K (30k, 50K, etc.)
+            r'(\d+)[kK]\s*(?:[€$]|euros?|eur)?',
+            # Con "mil" (30 mil, 50 mil euros, etc.)
+            r'(\d+)\s*mil\s*(?:[€$]|euros?|eur)?',
+            # Solo números grandes (más de 1000, probablemente presupuesto)
+            r'\b(\d{4,})\b',
         ]
-        
+
         for pattern in patterns:
-            match = re.search(pattern, text)
+            match = re.search(pattern, text, re.IGNORECASE)
             if match:
                 budget_str = match.group(1).replace('.', '').replace(',', '')
                 try:
                     budget = float(budget_str)
-                    if 'k' in text.lower():
+
+                    # Aplicar multiplicadores
+                    if re.search(r'\d+[kK]', text):
                         budget *= 1000
-                    if 'mil' in text.lower() and budget < 1000:
+                    elif 'mil' in text.lower() and budget < 1000:
                         budget *= 1000
-                    
-                    lead.budget = budget
-                    break
+
+                    # Solo aceptar si parece un presupuesto razonable (500€ - 10M€)
+                    if 500 <= budget <= 10_000_000:
+                        lead.budget = budget
+                        break
                 except ValueError:
                     continue
     
