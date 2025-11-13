@@ -2,7 +2,7 @@
 Lead model - Represents a potential customer/client.
 """
 
-from sqlalchemy import Column, Integer, String, Float, DateTime, Enum, Text, Boolean, JSON
+from sqlalchemy import Column, Integer, String, Float, DateTime, Enum, Text, Boolean, JSON, Index
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -43,14 +43,25 @@ class Lead(Base):
     """
     
     __tablename__ = "leads"
-    
+
+    # Define composite indexes for performance
+    __table_args__ = (
+        # Composite index for filtering by status and sorting by creation date
+        Index('idx_leads_status_created', 'status', 'created_at'),
+        # Composite index for filtering by category and sorting by score
+        Index('idx_leads_category_score', 'category', 'score'),
+        # Index for full-text search on project description (PostgreSQL specific)
+        # Index('idx_leads_project_desc_fts', 'project_description', postgresql_using='gin',
+        #       postgresql_ops={'project_description': 'gin_trgm_ops'}),
+    )
+
     # Primary Key
     id = Column(Integer, primary_key=True, index=True)
     
     # Contact Information
     name = Column(String(200), nullable=True)
     email = Column(String(255), nullable=True, index=True)
-    phone = Column(String(50), nullable=True)
+    phone = Column(String(50), nullable=True, index=True)
     
     # Project Information
     project_type = Column(Enum(ProjectType), nullable=True)
@@ -62,8 +73,8 @@ class Lead(Base):
     
     # Lead Classification
     score = Column(Integer, default=0)
-    category = Column(Enum(LeadCategory), default=LeadCategory.COLD)
-    status = Column(Enum(LeadStatus), default=LeadStatus.NEW)
+    category = Column(Enum(LeadCategory), default=LeadCategory.COLD, index=True)
+    status = Column(Enum(LeadStatus), default=LeadStatus.NEW, index=True)
     
     # Qualification Details
     has_defined_project = Column(Boolean, default=False)

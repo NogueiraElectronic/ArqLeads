@@ -10,6 +10,7 @@ import re
 
 from app.core.config import settings
 from app.core.models import Lead, Conversation, Message, MessageRole, MessageTemplate, ProjectType
+from app.core.validators import InputValidator
 
 logger = logging.getLogger(__name__)
 
@@ -480,34 +481,61 @@ Cada conversación representa a un estudio de arquitectura serio y profesional. 
             return
     
     def _extract_contact_info(self, text: str, lead: Lead) -> None:
-        """Extract contact information from text."""
+        """Extract and validate contact information from text."""
         # Extract email
         email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
         email_match = re.search(email_pattern, text)
         if email_match:
-            lead.email = email_match.group(0)
-        
+            try:
+                validated_email = InputValidator.validate_email(email_match.group(0))
+                if validated_email:
+                    lead.email = validated_email
+                    logger.info(f"Extracted and validated email: {validated_email}")
+            except ValueError as e:
+                logger.warning(f"Invalid email format detected: {email_match.group(0)} - {e}")
+
         # Extract phone
         phone_patterns = [
-            r'\b([6-9]\d{8})\b',
-            r'\b(\+34\s*[6-9]\d{8})\b',
-            r'\b(34\s*[6-9]\d{8})\b',
+            r'\b([6-9]\d{8})\b',  # Spanish mobile without prefix
+            r'\b(\+34\s*[6-9]\d{8})\b',  # Spanish mobile with +34
+            r'\b(34\s*[6-9]\d{8})\b',  # Spanish mobile with 34
+            r'\b(\+\d{1,3}\s*\d{6,14})\b',  # International format
         ]
-        
+
         for pattern in phone_patterns:
             phone_match = re.search(pattern, text)
             if phone_match:
-                lead.phone = phone_match.group(1)
-                break
-        
-        # Extract name (basic)
+                raw_phone = phone_match.group(1)
+                try:
+                    # Normalize Spanish numbers
+                    if not raw_phone.startswith('+'):
+                        if raw_phone.startswith('34'):
+                            raw_phone = '+' + raw_phone
+                        elif len(raw_phone) == 9:
+                            raw_phone = '+34' + raw_phone
+
+                    validated_phone = InputValidator.validate_phone(raw_phone)
+                    if validated_phone:
+                        lead.phone = validated_phone
+                        logger.info(f"Extracted and validated phone: {validated_phone}")
+                        break
+                except ValueError as e:
+                    logger.warning(f"Invalid phone format detected: {raw_phone} - {e}")
+
+        # Extract name (basic) - sanitize to prevent XSS
         name_indicators = ["me llamo", "mi nombre es", "soy", "mi nombre:", "nombre:"]
         for indicator in name_indicators:
             if indicator in text.lower():
                 parts = text.lower().split(indicator)
                 if len(parts) > 1:
                     potential_name = parts[1].strip().split()[0:3]
-                    lead.name = " ".join(potential_name).strip(',.;')
+                    raw_name = " ".join(potential_name).strip(',.;')
+                    try:
+                        sanitized_name = InputValidator.sanitize_text_field(raw_name, max_length=200)
+                        lead.name = sanitized_name
+                        logger.info(f"Extracted name: {sanitized_name}")
+                    except ValueError as e:
+                        logger.warning(f"Invalid name format: {raw_name} - {e}")
                     break
     
     def should_request_contact(self, lead: Lead) -> bool:

@@ -3,16 +3,18 @@ Leads API endpoints.
 Handles lead management and CRUD operations.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import List, Optional
 from datetime import datetime, timedelta
 import logging
 
 from app.core.database import get_db
 from app.core.models.lead import Lead, LeadStatus, LeadCategory, ProjectType
+from app.core.rate_limit import limiter
+from app.core.validators import InputValidator
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -55,6 +57,28 @@ class LeadUpdateRequest(BaseModel):
     notes: Optional[str] = None
     tags: Optional[List[str]] = None
 
+    @field_validator('notes')
+    @classmethod
+    def sanitize_notes(cls, v: Optional[str]) -> Optional[str]:
+        """Sanitize notes field to prevent XSS."""
+        if v is None:
+            return v
+        return InputValidator.sanitize_text_field(v, max_length=5000)
+
+    @field_validator('tags')
+    @classmethod
+    def validate_tags(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+        """Validate and sanitize tags."""
+        if v is None:
+            return v
+        sanitized_tags = []
+        for tag in v:
+            if len(tag) > 50:
+                raise ValueError("Tag length cannot exceed 50 characters")
+            sanitized_tag = InputValidator.sanitize_text_field(tag, max_length=50)
+            sanitized_tags.append(sanitized_tag)
+        return sanitized_tags
+
 
 class LeadStatsResponse(BaseModel):
     """Response model for lead statistics."""
@@ -73,7 +97,9 @@ class LeadStatsResponse(BaseModel):
 
 
 @router.get("/", response_model=LeadListResponse)
+@limiter.limit("60/minute")
 async def get_leads(
+    request: Request,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
     category: Optional[LeadCategory] = None,
@@ -119,7 +145,9 @@ async def get_leads(
 
 
 @router.get("/hot", response_model=LeadListResponse)
+@limiter.limit("60/minute")
 async def get_hot_leads(
+    request: Request,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db)
@@ -143,7 +171,8 @@ async def get_hot_leads(
 
 
 @router.get("/stats", response_model=LeadStatsResponse)
-async def get_lead_stats(db: Session = Depends(get_db)):
+@limiter.limit("30/minute")
+async def get_lead_stats(request: Request, db: Session = Depends(get_db)):
     """Get overall lead statistics."""
     total_leads = db.query(func.count(Lead.id)).scalar()
     
@@ -188,7 +217,9 @@ async def get_lead_stats(db: Session = Depends(get_db)):
 
 
 @router.get("/{lead_id}", response_model=LeadResponse)
+@limiter.limit("60/minute")
 async def get_lead(
+    request: Request,
     lead_id: int,
     db: Session = Depends(get_db)
 ):
@@ -205,7 +236,9 @@ async def get_lead(
 
 
 @router.patch("/{lead_id}")
+@limiter.limit("20/minute")
 async def update_lead(
+    request: Request,
     lead_id: int,
     update_data: LeadUpdateRequest,
     db: Session = Depends(get_db)
@@ -241,7 +274,9 @@ async def update_lead(
 
 
 @router.delete("/{lead_id}")
+@limiter.limit("10/minute")
 async def delete_lead(
+    request: Request,
     lead_id: int,
     db: Session = Depends(get_db)
 ):
@@ -261,7 +296,9 @@ async def delete_lead(
 
 
 @router.get("/export/csv")
+@limiter.limit("5/minute")
 async def export_leads_csv(
+    request: Request,
     category: Optional[LeadCategory] = None,
     status: Optional[LeadStatus] = None,
     db: Session = Depends(get_db)
