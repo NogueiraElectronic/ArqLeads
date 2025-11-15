@@ -9,7 +9,7 @@ export default function ChatWidget() {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: 'Buenos días. Soy el asistente virtual de tu estudio de arquitectura. ¿En qué tipo de proyecto estás trabajando?',
+      content: 'Buenos días. ¿En qué proyecto estás trabajando?',
       timestamp: new Date().toISOString()
     }
   ]);
