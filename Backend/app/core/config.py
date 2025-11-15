@@ -49,7 +49,13 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: Optional[str] = None
     ANTHROPIC_MODEL: str = "claude-3-sonnet-20240229"
     ANTHROPIC_MAX_TOKENS: int = 500
-    
+
+    # Ollama (local, free)
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "llama3.1"
+    OLLAMA_MAX_TOKENS: int = 2048
+    OLLAMA_TEMPERATURE: float = 0.7
+
     # Security
     SECRET_KEY: str = Field(
         default="change-this-in-production",
@@ -222,6 +228,14 @@ class Settings(BaseSettings):
                 "api_key": self.ANTHROPIC_API_KEY,
                 "model": self.ANTHROPIC_MODEL,
                 "max_tokens": self.ANTHROPIC_MAX_TOKENS,
+            }
+        elif self.AI_PROVIDER == "ollama":
+            return {
+                "provider": "ollama",
+                "base_url": self.OLLAMA_BASE_URL,
+                "model": self.OLLAMA_MODEL,
+                "max_tokens": self.OLLAMA_MAX_TOKENS,
+                "temperature": self.OLLAMA_TEMPERATURE,
             }
         else:
             raise ValueError(f"Unknown AI provider: {self.AI_PROVIDER}")

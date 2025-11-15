@@ -22,7 +22,7 @@ class ChatService:
         """Initialize chat service with configured AI provider."""
         self.ai_config = settings.get_ai_config()
         self.provider = self.ai_config["provider"]
-        
+
         # Initialize AI client based on provider
         if self.provider == "openai":
             from openai import OpenAI
@@ -30,9 +30,13 @@ class ChatService:
         elif self.provider == "anthropic":
             from anthropic import Anthropic
             self.client = Anthropic(api_key=self.ai_config["api_key"])
+        elif self.provider == "ollama":
+            # Ollama uses HTTP requests, no special client needed
+            self.client = None
+            self.ollama_url = self.ai_config.get("base_url", "http://localhost:11434")
         else:
             raise ValueError(f"Unknown AI provider: {self.provider}")
-        
+
         logger.info(f"ChatService initialized with provider: {self.provider}")
     
     def get_system_prompt(self) -> str:
@@ -173,6 +177,8 @@ Cada conversación representa a un estudio de arquitectura serio y profesional. 
                 response_text, tokens = await self._generate_openai(messages)
             elif self.provider == "anthropic":
                 response_text, tokens = await self._generate_anthropic(messages)
+            elif self.provider == "ollama":
+                response_text, tokens = await self._generate_ollama(messages)
             else:
                 raise ValueError(f"Unknown provider: {self.provider}")
             
@@ -226,7 +232,39 @@ Cada conversación representa a un estudio de arquitectura serio y profesional. 
         except Exception as e:
             logger.error(f"Anthropic API error: {e}")
             raise
-    
+
+    async def _generate_ollama(self, messages: List[Dict]) -> Tuple[str, int]:
+        """Generate response using Ollama local API."""
+        try:
+            import httpx
+
+            # Ollama API expects OpenAI-compatible format
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    f"{self.ollama_url}/api/chat",
+                    json={
+                        "model": self.ai_config["model"],
+                        "messages": messages,
+                        "stream": False,
+                        "options": {
+                            "temperature": self.ai_config.get("temperature", 0.7),
+                            "num_predict": self.ai_config.get("max_tokens", 2048),
+                        }
+                    }
+                )
+                response.raise_for_status()
+                data = response.json()
+
+                text = data["message"]["content"]
+                # Ollama doesn't always return token count, estimate it
+                tokens = data.get("eval_count", len(text.split()) * 2)
+
+                return text, tokens
+
+        except Exception as e:
+            logger.error(f"Ollama API error: {e}")
+            raise
+
     def _format_context(self, context: Dict) -> str:
         """Format context dictionary into readable string for AI."""
         if not context:
