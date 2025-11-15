@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ArqLeads - Dashboard Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto px-4 py-8">
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">🏗️ ArqLeads Dashboard</h1>
+            <p class="text-gray-600">Sistema de Captación de Leads para Arquitectura</p>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="text-sm text-gray-600 mb-2">Total Leads</div>
+                <div class="text-3xl font-bold text-gray-800" id="total-leads">-</div>
+            </div>
+            <div class="bg-red-50 rounded-lg shadow p-6">
+                <div class="text-sm text-red-600 mb-2">🔥 Leads Calientes</div>
+                <div class="text-3xl font-bold text-red-600" id="hot-leads">-</div>
+            </div>
+            <div class="bg-orange-50 rounded-lg shadow p-6">
+                <div class="text-sm text-orange-600 mb-2">🌡️ Leads Tibios</div>
+                <div class="text-3xl font-bold text-orange-600" id="warm-leads">-</div>
+            </div>
+            <div class="bg-blue-50 rounded-lg shadow p-6">
+                <div class="text-sm text-blue-600 mb-2">❄️ Leads Fríos</div>
+                <div class="text-3xl font-bold text-blue-600" id="cold-leads">-</div>
+            </div>
+        </div>
+
+        <!-- Chart -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">Distribución de Leads</h2>
+            <canvas id="leadsChart" height="100"></canvas>
+        </div>
+
+        <!-- Leads Table -->
+        <div class="bg-white rounded-lg shadow-lg p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-gray-800">Últimos Leads</h2>
+                <button onclick="loadLeads()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                    Actualizar
+                </button>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full table-auto">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-4 py-2 text-left text-sm font-semibold text-gray-600">Fecha</th>
+                            <th class="px-4 py-2 text-left text-sm font-semibold text-gray-600">Nombre</th>
+                            <th class="px-4 py-2 text-left text-sm font-semibold text-gray-600">Contacto</th>
+                            <th class="px-4 py-2 text-left text-sm font-semibold text-gray-600">Proyecto</th>
+                            <th class="px-4 py-2 text-left text-sm font-semibold text-gray-600">Presupuesto</th>
+                            <th class="px-4 py-2 text-left text-sm font-semibold text-gray-600">Timeline</th>
+                            <th class="px-4 py-2 text-left text-sm font-semibold text-gray-600">Score</th>
+                        </tr>
+                    </thead>
+                    <tbody id="leads-table-body" class="divide-y divide-gray-200">
+                        <tr>
+                            <td colspan="7" class="px-4 py-8 text-center text-gray-500">
+                                Cargando leads...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8000/api/v1';
+        let chart = null;
+
+        async function loadStats() {
+            try {
+                const response = await fetch(`${API_URL}/leads/stats`);
+                const stats = await response.json();
+
+                document.getElementById('total-leads').textContent = stats.total_leads;
+                document.getElementById('hot-leads').textContent = stats.hot_leads;
+                document.getElementById('warm-leads').textContent = stats.warm_leads;
+                document.getElementById('cold-leads').textContent = stats.cold_leads;
+
+                updateChart(stats);
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        function updateChart(stats) {
+            const ctx = document.getElementById('leadsChart').getContext('2d');
+
+            if (chart) {
+                chart.destroy();
+            }
+
+            chart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Calientes', 'Tibios', 'Fríos'],
+                    datasets: [{
+                        data: [stats.hot_leads, stats.warm_leads, stats.cold_leads],
+                        backgroundColor: ['#DC2626', '#F59E0B', '#3B82F6']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false
+                }
+            });
+        }
+
+        async function loadLeads() {
+            try {
+                const response = await fetch(`${API_URL}/leads/`);
+                const leads = await response.json();
+
+                const tbody = document.getElementById('leads-table-body');
+                tbody.innerHTML = '';
+
+                if (leads.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="7" class="px-4 py-8 text-center text-gray-500">
+                                No hay leads todavía
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                leads.forEach(lead => {
+                    const row = document.createElement('tr');
+                    row.className = 'hover:bg-gray-50';
+
+                    const categoryColor = {
+                        'hot': 'bg-red-100 text-red-800',
+                        'warm': 'bg-orange-100 text-orange-800',
+                        'cold': 'bg-blue-100 text-blue-800'
+                    }[lead.category] || 'bg-gray-100 text-gray-800';
+
+                    row.innerHTML = `
+                        <td class="px-4 py-3 text-sm text-gray-600">
+                            ${new Date(lead.created_at).toLocaleString('es-ES')}
+                        </td>
+                        <td class="px-4 py-3 text-sm font-medium text-gray-900">
+                            ${lead.name || '-'}
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-600">
+                            ${lead.email || lead.phone || '-'}
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-600">
+                            ${lead.project_type || '-'}
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-600">
+                            ${lead.budget ? (lead.budget >= 1000 ? `${(lead.budget/1000).toFixed(0)}k €` : `${lead.budget} €`) : '-'}
+                        </td>
+                        <td class="px-4 py-3 text-sm text-gray-600">
+                            ${lead.timeline || '-'}
+                        </td>
+                        <td class="px-4 py-3">
+                            <span class="px-2 py-1 rounded text-xs font-semibold ${categoryColor}">
+                                ${lead.score}
+                            </span>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            } catch (error) {
+                console.error('Error loading leads:', error);
+                document.getElementById('leads-table-body').innerHTML = `
+                    <tr>
+                        <td colspan="7" class="px-4 py-8 text-center text-red-500">
+                            Error cargando leads. Verifica que el backend esté corriendo.
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+
+        // Load data on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            loadStats();
+            loadLeads();
+
+            // Auto-refresh every 30 seconds
+            setInterval(() => {
+                loadStats();
+                loadLeads();
+            }, 30000);
+        });
+    </script>
+</body>
+</html>

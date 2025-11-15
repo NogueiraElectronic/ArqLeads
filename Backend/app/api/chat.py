@@ -239,7 +239,13 @@ async def send_message(
         # Check if lead is hot
         if lead.is_hot_lead() and not lead.contacted_at:
             logger.info(f"Hot lead detected: {lead.id}")
-        
+            # Send email notification
+            try:
+                from app.core.services.email_service import email_service
+                await email_service.notify_hot_lead(lead)
+            except Exception as e:
+                logger.error(f"Failed to send hot lead notification: {e}")
+
         db.commit()
         
         return ChatMessageResponse(
