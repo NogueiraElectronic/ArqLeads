@@ -50,9 +50,19 @@ class Lead(Base):
         Index('idx_leads_status_created', 'status', 'created_at'),
         # Composite index for filtering by category and sorting by score
         Index('idx_leads_category_score', 'category', 'score'),
-        # Index for full-text search on project description (PostgreSQL specific)
-        # Index('idx_leads_project_desc_fts', 'project_description', postgresql_using='gin',
-        #       postgresql_ops={'project_description': 'gin_trgm_ops'}),
+        # Index for date range queries (common in analytics)
+        Index('idx_leads_created_at_desc', 'created_at', postgresql_using='btree'),
+        # Index for filtering hot leads by contacted status
+        Index('idx_leads_hot_contacted', 'category', 'contacted_at'),
+        # Index for session lookup (frequent operation)
+        Index('idx_leads_session_created', 'session_id', 'created_at'),
+        # Index for budget-based filtering
+        Index('idx_leads_budget', 'budget', postgresql_using='btree'),
+        # Partial index for uncontacted hot leads (most important query)
+        Index('idx_leads_hot_uncontacted', 'category', 'created_at',
+              postgresql_where="category = 'hot' AND contacted_at IS NULL"),
+        # Index for email lookups (deduplication)
+        Index('idx_leads_email_lower', 'email', postgresql_using='btree'),
     )
 
     # Primary Key

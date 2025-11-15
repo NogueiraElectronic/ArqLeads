@@ -15,6 +15,7 @@ from app.core.database import get_db
 from app.core.models.lead import Lead, LeadStatus, LeadCategory, ProjectType
 from app.core.rate_limit import limiter
 from app.core.validators import InputValidator
+from app.core.cache import cache, CacheKeys, CacheTTL
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -173,47 +174,60 @@ async def get_hot_leads(
 @router.get("/stats", response_model=LeadStatsResponse)
 @limiter.limit("30/minute")
 async def get_lead_stats(request: Request, db: Session = Depends(get_db)):
-    """Get overall lead statistics."""
+    """Get overall lead statistics (cached for 60 seconds)."""
+    # Try cache first
+    cached_stats = cache.get(CacheKeys.LEAD_STATS)
+    if cached_stats:
+        logger.debug("Returning cached lead stats")
+        return LeadStatsResponse(**cached_stats)
+
+    # Calculate stats
     total_leads = db.query(func.count(Lead.id)).scalar()
-    
+
     # Count by category
     hot_leads = db.query(func.count(Lead.id)).filter(Lead.category == LeadCategory.HOT).scalar()
     warm_leads = db.query(func.count(Lead.id)).filter(Lead.category == LeadCategory.WARM).scalar()
     cold_leads = db.query(func.count(Lead.id)).filter(Lead.category == LeadCategory.COLD).scalar()
-    
+
     # Count by status
     new_leads = db.query(func.count(Lead.id)).filter(Lead.status == LeadStatus.NEW).scalar()
     contacted_leads = db.query(func.count(Lead.id)).filter(Lead.status == LeadStatus.CONTACTED).scalar()
     qualified_leads = db.query(func.count(Lead.id)).filter(Lead.status == LeadStatus.QUALIFIED).scalar()
     converted_leads = db.query(func.count(Lead.id)).filter(Lead.status == LeadStatus.CONVERTED).scalar()
-    
+
     # Average score
     avg_score = db.query(func.avg(Lead.score)).scalar() or 0
-    
+
     # Time-based counts
     now = datetime.utcnow()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     week_start = now - timedelta(days=7)
     month_start = now - timedelta(days=30)
-    
+
     leads_today = db.query(func.count(Lead.id)).filter(Lead.created_at >= today_start).scalar()
     leads_this_week = db.query(func.count(Lead.id)).filter(Lead.created_at >= week_start).scalar()
     leads_this_month = db.query(func.count(Lead.id)).filter(Lead.created_at >= month_start).scalar()
-    
-    return LeadStatsResponse(
-        total_leads=total_leads,
-        hot_leads=hot_leads,
-        warm_leads=warm_leads,
-        cold_leads=cold_leads,
-        new_leads=new_leads,
-        contacted_leads=contacted_leads,
-        qualified_leads=qualified_leads,
-        converted_leads=converted_leads,
-        avg_score=round(avg_score, 2),
-        leads_today=leads_today,
-        leads_this_week=leads_this_week,
-        leads_this_month=leads_this_month,
-    )
+
+    stats = {
+        "total_leads": total_leads,
+        "hot_leads": hot_leads,
+        "warm_leads": warm_leads,
+        "cold_leads": cold_leads,
+        "new_leads": new_leads,
+        "contacted_leads": contacted_leads,
+        "qualified_leads": qualified_leads,
+        "converted_leads": converted_leads,
+        "avg_score": round(avg_score, 2),
+        "leads_today": leads_today,
+        "leads_this_week": leads_this_week,
+        "leads_this_month": leads_this_month,
+    }
+
+    # Cache for 60 seconds
+    cache.set(CacheKeys.LEAD_STATS, stats, CacheTTL.SHORT)
+    logger.debug("Cached lead stats")
+
+    return LeadStatsResponse(**stats)
 
 
 @router.get("/{lead_id}", response_model=LeadResponse)

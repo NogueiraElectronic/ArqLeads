@@ -10,8 +10,23 @@
 <body class="bg-gray-100">
     <div class="container mx-auto px-4 py-8">
         <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
-            <h1 class="text-3xl font-bold text-gray-800 mb-2">🏗️ ArqLeads Dashboard</h1>
-            <p class="text-gray-600">Sistema de Captación de Leads para Arquitectura</p>
+            <div class="flex justify-between items-center">
+                <div>
+                    <h1 class="text-3xl font-bold text-gray-800 mb-2">🏗️ ArqLeads Dashboard</h1>
+                    <p class="text-gray-600">Sistema de Captación de Leads para Arquitectura</p>
+                </div>
+                <div class="flex items-center gap-4">
+                    <span class="text-sm text-gray-600">
+                        👤 <span id="username" class="font-semibold">Admin</span>
+                    </span>
+                    <button
+                        onclick="logout()"
+                        class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded transition-colors"
+                    >
+                        Cerrar Sesión
+                    </button>
+                </div>
+            </div>
         </div>
 
         <!-- Stats Cards -->
@@ -75,7 +90,60 @@
 
     <script>
         const API_URL = 'http://localhost:8000/api/v1';
+        const AUTH_URL = 'http://localhost:8000/admin';
         let chart = null;
+
+        // Auth functions
+        function getToken() {
+            return localStorage.getItem('admin_token');
+        }
+
+        function isTokenExpired() {
+            const expires = localStorage.getItem('token_expires');
+            return !expires || Date.now() >= parseInt(expires);
+        }
+
+        function logout() {
+            localStorage.removeItem('admin_token');
+            localStorage.removeItem('token_expires');
+            window.location.href = '/admin/login';
+        }
+
+        async function verifyAuth() {
+            const token = getToken();
+
+            if (!token || isTokenExpired()) {
+                logout();
+                return false;
+            }
+
+            try {
+                const response = await fetch(`${AUTH_URL}/verify`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    logout();
+                    return false;
+                }
+
+                const data = await response.json();
+                document.getElementById('username').textContent = data.user.username;
+                return true;
+            } catch (error) {
+                console.error('Auth verification failed:', error);
+                logout();
+                return false;
+            }
+        }
+
+        function getAuthHeaders() {
+            return {
+                'Authorization': `Bearer ${getToken()}`
+            };
+        }
 
         async function loadStats() {
             try {
@@ -185,7 +253,15 @@
         }
 
         // Load data on page load
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Verify authentication first
+            const isAuthenticated = await verifyAuth();
+
+            if (!isAuthenticated) {
+                return; // Will redirect to login
+            }
+
+            // Load dashboard data
             loadStats();
             loadLeads();
 

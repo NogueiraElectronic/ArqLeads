@@ -19,6 +19,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from app.core.config import settings
 from app.core.database import init_db, check_database_health
 from app.core.rate_limit import limiter
+from app.core.security import SecurityHeadersMiddleware, HTTPSRedirectMiddleware
 
 # Configure structured logging
 structlog.configure(
@@ -98,6 +99,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add security middlewares
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(HTTPSRedirectMiddleware)
+
+# Add compression middleware
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Add request logging middleware
 @app.middleware("http")
