@@ -2,9 +2,9 @@
 Chat API endpoints.
 Handles chat conversations and message processing.
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
 from datetime import datetime
 import uuid
@@ -16,7 +16,8 @@ from app.core.models.lead import Lead
 from app.core.models.conversation import Conversation
 from app.core.models.message import Message, MessageRole, MessageTemplate
 from app.core.services.chat_service import ChatService
-
+from app.core.rate_limit import limiter
+from app.core.validators import InputValidator
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -31,6 +32,26 @@ class ChatMessageRequest(BaseModel):
     session_id: Optional[str] = Field(None, description="Session ID (auto-generated if not provided)")
     message: str = Field(..., min_length=1, max_length=2000, description="User message")
     metadata: Optional[dict] = Field(default_factory=dict, description="Additional metadata")
+
+    @field_validator('session_id')
+    @classmethod
+    def validate_session_id(cls, v: Optional[str]) -> Optional[str]:
+        """Validate session ID format."""
+        if v is None:
+            return v
+        try:
+            return InputValidator.validate_session_id(v)
+        except ValueError as e:
+            logger.warning(f"Invalid session ID format: {v}")
+            raise ValueError(str(e))
+
+    @field_validator('message')
+    @classmethod
+    def sanitize_message(cls, v: str) -> str:
+        """Sanitize message to prevent XSS attacks."""
+        if not v or not v.strip():
+            raise ValueError("Message cannot be empty")
+        return InputValidator.sanitize_text_field(v, max_length=2000)
 
 
 class ChatMessageResponse(BaseModel):
@@ -53,39 +74,45 @@ class ConversationHistory(BaseModel):
 
 
 @router.post("/message", response_model=ChatMessageResponse)
+@limiter.limit("20/minute")
 async def send_message(
-    request: ChatMessageRequest,
+    request: Request,
+    chat_request: ChatMessageRequest,
     db: Session = Depends(get_db)
 ):
     """
     Send a message to the chatbot and get a response.
+
+    Rate limits:
+    - 20 messages per minute per IP
+    - Prevents abuse and excessive AI API costs
     """
     try:
         # Generate or validate session ID
-        session_id = request.session_id or str(uuid.uuid4())
-        
+        session_id = chat_request.session_id or str(uuid.uuid4())
+
         # Get or create conversation
         conversation = db.query(Conversation).filter(
             Conversation.session_id == session_id
         ).first()
-        
+
         if not conversation:
             # Create new conversation
             conversation = Conversation(
                 session_id=session_id,
-                channel=request.metadata.get("channel", "web"),
-                ip_address=request.metadata.get("ip_address"),
-                user_agent=request.metadata.get("user_agent"),
+                channel=chat_request.metadata.get("channel", "web"),
+                ip_address=chat_request.metadata.get("ip_address"),
+                user_agent=chat_request.metadata.get("user_agent"),
             )
             db.add(conversation)
-            
+
             # Create new lead
             lead = Lead(
                 session_id=session_id,
-                source=request.metadata.get("source", "web_chat"),
-                utm_source=request.metadata.get("utm_source"),
-                utm_medium=request.metadata.get("utm_medium"),
-                utm_campaign=request.metadata.get("utm_campaign"),
+                source=chat_request.metadata.get("source", "web_chat"),
+                utm_source=chat_request.metadata.get("utm_source"),
+                utm_medium=chat_request.metadata.get("utm_medium"),
+                utm_campaign=chat_request.metadata.get("utm_campaign"),
             )
             db.add(lead)
             conversation.lead = lead
@@ -142,13 +169,13 @@ async def send_message(
         user_message = Message(
             conversation_id=conversation.id,
             role=MessageRole.USER,
-            content=request.message,
+            content=chat_request.message,
         )
         db.add(user_message)
         conversation.add_message_count(is_user=True)
-        
+
         # Extract information from user message
-        chat_service.extract_information(request.message, lead)
+        chat_service.extract_information(chat_request.message, lead)
         
         # Get conversation history
         messages = db.query(Message).filter(
@@ -160,35 +187,38 @@ async def send_message(
             for msg in messages
         ]
         
-        # Check if we should use a template response
-        template_response = chat_service.get_next_question(lead, conversation)
-        
-        if template_response:
-            assistant_response = template_response
+        # Generate AI response (always use AI, no rigid templates)
+        try:
+            # Prepare comprehensive context for AI
+            context = {
+                "project_type": lead.project_type.value if lead.project_type else None,
+                "budget": lead.budget,
+                "timeline": lead.timeline,
+                "location": lead.location,
+                "name": lead.name,
+                "email": lead.email,
+                "phone": lead.phone,
+                "lead_score": lead.score,
+                "lead_category": lead.category.value if lead.category else None,
+                "has_budget": lead.has_budget,
+                "has_timeline": lead.has_timeline,
+                "has_location": lead.has_location,
+                "contact_complete": lead.contact_complete,
+            }
+
+            assistant_response, tokens_used, processing_time = await chat_service.generate_response(
+                conversation_history,
+                context=context
+            )
+        except Exception as e:
+            logger.error(f"Error generating AI response: {e}")
+            assistant_response = MessageTemplate.format(
+                MessageTemplate.ERROR,
+                contact_email=settings.NOTIFICATION_EMAILS[0] if settings.NOTIFICATION_EMAILS else "contacto@estudio.com",
+                contact_phone="N/A"
+            )
             tokens_used = 0
             processing_time = 0
-        else:
-            # Generate AI response
-            try:
-                assistant_response, tokens_used, processing_time = await chat_service.generate_response(
-                    conversation_history,
-                    context={
-                        "project_type": lead.project_type.value if lead.project_type else None,
-                        "budget": lead.budget,
-                        "timeline": lead.timeline,
-                        "location": lead.location,
-                        "score": lead.score,
-                    }
-                )
-            except Exception as e:
-                logger.error(f"Error generating AI response: {e}")
-                assistant_response = MessageTemplate.format(
-                    MessageTemplate.ERROR,
-                    contact_email=settings.NOTIFICATION_EMAILS[0],
-                    contact_phone="N/A"
-                )
-                tokens_used = 0
-                processing_time = 0
         
         # Save assistant message
         assistant_message = Message(
@@ -209,7 +239,13 @@ async def send_message(
         # Check if lead is hot
         if lead.is_hot_lead() and not lead.contacted_at:
             logger.info(f"Hot lead detected: {lead.id}")
-        
+            # Send email notification
+            try:
+                from app.core.services.email_service import email_service
+                await email_service.notify_hot_lead(lead)
+            except Exception as e:
+                logger.error(f"Failed to send hot lead notification: {e}")
+
         db.commit()
         
         return ChatMessageResponse(
@@ -231,7 +267,9 @@ async def send_message(
 
 
 @router.get("/history/{session_id}", response_model=ConversationHistory)
+@limiter.limit("30/minute")
 async def get_conversation_history(
+    request: Request,
     session_id: str,
     db: Session = Depends(get_db)
 ):
@@ -260,7 +298,9 @@ async def get_conversation_history(
 
 
 @router.post("/end/{session_id}")
+@limiter.limit("10/minute")
 async def end_conversation(
+    request: Request,
     session_id: str,
     db: Session = Depends(get_db)
 ):

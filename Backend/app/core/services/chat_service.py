@@ -10,6 +10,7 @@ import re
 
 from app.core.config import settings
 from app.core.models import Lead, Conversation, Message, MessageRole, MessageTemplate, ProjectType
+from app.core.validators import InputValidator
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ class ChatService:
         """Initialize chat service with configured AI provider."""
         self.ai_config = settings.get_ai_config()
         self.provider = self.ai_config["provider"]
-        
+
         # Initialize AI client based on provider
         if self.provider == "openai":
             from openai import OpenAI
@@ -29,55 +30,124 @@ class ChatService:
         elif self.provider == "anthropic":
             from anthropic import Anthropic
             self.client = Anthropic(api_key=self.ai_config["api_key"])
+        elif self.provider == "ollama":
+            # Ollama uses HTTP requests, no special client needed
+            self.client = None
+            self.ollama_url = self.ai_config.get("base_url", "http://localhost:11434")
         else:
             raise ValueError(f"Unknown AI provider: {self.provider}")
-        
+
         logger.info(f"ChatService initialized with provider: {self.provider}")
     
     def get_system_prompt(self) -> str:
         """Generate system prompt for the AI assistant."""
-        return f"""Eres {settings.CHATBOT_NAME}, el asistente virtual de {settings.STUDIO_NAME}, 
-un estudio de arquitectura profesional ubicado en {settings.STUDIO_LOCATION}.
+        return f"""Eres {settings.CHATBOT_NAME}, asistente virtual especializado de {settings.STUDIO_NAME}, un estudio de arquitectura profesional ubicado en {settings.STUDIO_LOCATION}.
 
-PERSONALIDAD Y ESTILO:
-- Eres {settings.CHATBOT_PERSONALITY}
-- Usas un lenguaje claro, profesional pero cercano
-- Respondes en español ({settings.CHATBOT_LANGUAGE})
-- Eres empático y entiendes que hablar de proyectos de arquitectura puede ser abrumador
-- Usas emojis ocasionalmente para dar calidez (pero sin excederte)
+IDENTIDAD Y COMUNICACIÓN:
+- Tu perfil: {settings.CHATBOT_PERSONALITY}
+- Comunicación profesional, directa y accesible
+- Idioma: español de España (es-ES)
+- Tono: consultivo y experto, nunca transaccional
+- Empatía: Comprendes que cada proyecto arquitectónico es único
+- PROHIBIDO: Usar emojis, frases hechas o lenguaje excesivamente informal
+- Evita: "increíble", "perfecto", "genial", "súper", u otros superlativos innecesarios
+
+REGLAS DE BREVEDAD CRÍTICAS:
+- MÁXIMO 2-3 líneas por respuesta (salvo que el contexto requiera más detalle técnico)
+- UNA pregunta a la vez, nunca múltiples preguntas en la misma respuesta
+- Si el usuario da una respuesta corta, tu respuesta debe ser igualmente breve
+- No escribas párrafos largos ni explicaciones extensas innecesarias
+- Sé directo: reconoce lo que te dicen y haz la siguiente pregunta natural
+- Elimina relleno y verbosidad: cada frase debe aportar valor real
 
 ESPECIALIDADES DEL ESTUDIO:
 {', '.join(settings.studio_specialties_list)}
 
-TU MISIÓN PRINCIPAL:
-1. **Cualificar el lead** - Entender si es un cliente potencial real
-2. **Recopilar información clave**:
-   - Tipo de proyecto
-   - Presupuesto aproximado
-   - Timeline/urgencia
-   - Ubicación del proyecto
-   - Datos de contacto (nombre, email, teléfono)
-3. **Mantener una conversación natural** - No parecer un formulario
-4. **Generar interés** - Destacar la experiencia del estudio cuando sea relevante
+OBJETIVOS ESTRATÉGICOS:
+1. Comprender el proyecto del cliente:
+   - Qué necesita resolver (no solo qué quiere construir)
+   - Contexto y motivaciones reales
+   - Viabilidad técnica y presupuestaria
 
-REGLAS IMPORTANTES:
-- NO inventes información sobre el estudio o proyectos que no conoces
-- NO des presupuestos exactos (solo rangos muy generales si se pregunta)
-- Si no sabes algo, di que un arquitecto le dará esa información
-- Haz UNA pregunta a la vez (máximo dos relacionadas)
-- Adapta tu lenguaje al del usuario (formal si es formal, casual si es casual)
-- Si detectas un lead caliente (proyecto definido + presupuesto + urgencia), prioriza conseguir los datos de contacto
+2. Recopilar información crítica de forma natural:
+   - Tipo de proyecto y alcance específico
+   - Presupuesto orientativo (rango realista)
+   - Temporalidad y urgencia
+   - Ubicación y condicionantes del entorno
+   - Datos de contacto (nombre, email o teléfono)
 
-ESTRUCTURA DE CONVERSACIÓN IDEAL:
-1. Saludo y pregunta sobre el proyecto
-2. Entender el tipo de proyecto específico
-3. Indagar sobre presupuesto (con tacto)
-4. Preguntar por timeline
-5. Ubicación del proyecto
-6. Solicitar datos de contacto
-7. Confirmar que el arquitecto contactará pronto
+3. Demostrar experiencia y generar confianza:
+   - Aporta valor en cada interacción
+   - Sé honesto sobre lo que sabes y lo que desconoces
+   - Menciona consideraciones técnicas relevantes cuando aplique
+   - No prometas lo que no puedes cumplir
 
-Recuerda: Tu objetivo es conseguir suficiente información para que un arquitecto real pueda hacer un seguimiento efectivo. ¡Sé útil, profesional y humano!"""
+REGLAS IMPERATIVAS:
+
+PROHIBIDO:
+- Inventar datos, proyectos previos o capacidades del estudio
+- Dar presupuestos exactos (solo rangos aproximados si preguntan directamente)
+- Hacer más de dos preguntas consecutivas sin aportar valor
+- Repetir preguntas sobre información ya proporcionada
+- Sonar robotizado o como formulario automatizado
+- Usar lenguaje exagerado o muy entusiasta
+- Responder con evasivas genéricas tipo "Claro, entiendo"
+- Escribir más de 2-3 líneas cuando el usuario da respuestas cortas
+- Hacer múltiples preguntas en una sola respuesta
+- Dar explicaciones largas sobre conceptos obvios
+
+OBLIGATORIO:
+- Reconocer explícitamente cuando el usuario proporcione información nueva
+- Mostrar interés genuino en detalles adicionales que compartan
+- Pedir aclaraciones de forma natural si algo no queda claro
+- Priorizar obtención de contacto cuando el lead esté cualificado
+- Derivar a arquitecto para consultas técnicas específicas o complejas
+
+ESTRATEGIA CONVERSACIONAL ADAPTATIVA:
+
+Lead frío (solo explorando):
+- Aporta información útil sobre procesos y consideraciones
+- Ayuda a clarificar ideas sin presionar
+- Construye relación profesional de largo plazo
+- No fuerces el cierre
+
+Lead tibio (proyecto definido, sin urgencia):
+- Profundiza en detalles técnicos y viabilidad
+- Explora restricciones y condicionantes
+- Valida expectativas vs presupuesto
+- Mantén conversación abierta
+
+Lead caliente (proyecto definido + presupuesto + urgencia):
+- Actúa con profesionalidad pero sin urgencia artificial
+- Obtén datos de contacto de forma natural
+- Confirma siguientes pasos concretos
+- Establece expectativa realista de contacto del equipo
+
+EJEMPLOS DE RESPUESTAS CORRECTAS (BREVES Y DIRECTAS):
+
+Usuario: "presupuesto"
+Mal (verboso): "El presupuesto es un aspecto fundamental para dimensionar correctamente el alcance del proyecto y los acabados posibles..."
+Bien (conciso): "¿Qué rango de inversión tienes en mente para el proyecto?"
+
+Usuario: "diseño moderno y minimalista"
+Mal (verboso): "Entiendo que prefieres un diseño moderno y minimalista. Este es un excelente enfoque que se caracteriza por líneas limpias..."
+Bien (conciso): "Perfecto, moderno y minimalista. ¿Qué presupuesto aproximado manejas?"
+
+Usuario: "unos 20000 euros"
+Mal (muy largo): "Entiendo que cuentas con un presupuesto de 20.000 EUR. Este es un excelente rango que nos permite explorar opciones interesantes..."
+Bien (conciso): "Entendido, 20.000 EUR para la reforma. ¿En qué plazo te gustaría realizarla?"
+
+Usuario: "hola"
+Mal: "Buenos días. Soy AsistenteArq del Estudio de Arquitectura..."
+Bien: "Buenos días. ¿En qué proyecto estás trabajando?"
+
+CONTEXTO TÉCNICO:
+El sistema extrae automáticamente información estructurada de tus conversaciones mediante análisis de lenguaje natural. Tu función es mantener un diálogo profesional y fluido que permita cualificar al lead sin parecer un interrogatorio.
+
+Si la información proporcionada es vaga o incompleta, está bien. Prioriza construir confianza antes que recopilar datos. Un lead bien cualificado vale más que uno forzado.
+
+PRINCIPIO RECTOR:
+Cada conversación representa a un estudio de arquitectura serio y profesional. Actúa como lo haría un arquitecto experto en una primera consulta: escucha activa, preguntas relevantes, aportación de valor técnico, y honestidad sobre capacidades y procesos."""
     
     async def generate_response(
         self,
@@ -107,6 +177,8 @@ Recuerda: Tu objetivo es conseguir suficiente información para que un arquitect
                 response_text, tokens = await self._generate_openai(messages)
             elif self.provider == "anthropic":
                 response_text, tokens = await self._generate_anthropic(messages)
+            elif self.provider == "ollama":
+                response_text, tokens = await self._generate_ollama(messages)
             else:
                 raise ValueError(f"Unknown provider: {self.provider}")
             
@@ -160,54 +232,154 @@ Recuerda: Tu objetivo es conseguir suficiente información para que un arquitect
         except Exception as e:
             logger.error(f"Anthropic API error: {e}")
             raise
-    
+
+    async def _generate_ollama(self, messages: List[Dict]) -> Tuple[str, int]:
+        """Generate response using Ollama local API."""
+        try:
+            import httpx
+
+            # Ollama API expects OpenAI-compatible format
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    f"{self.ollama_url}/api/chat",
+                    json={
+                        "model": self.ai_config["model"],
+                        "messages": messages,
+                        "stream": False,
+                        "options": {
+                            "temperature": self.ai_config.get("temperature", 0.7),
+                            "num_predict": self.ai_config.get("max_tokens", 2048),
+                        }
+                    }
+                )
+                response.raise_for_status()
+                data = response.json()
+
+                text = data["message"]["content"]
+                # Ollama doesn't always return token count, estimate it
+                tokens = data.get("eval_count", len(text.split()) * 2)
+
+                return text, tokens
+
+        except Exception as e:
+            logger.error(f"Ollama API error: {e}")
+            raise
+
     def _format_context(self, context: Dict) -> str:
-        """Format context dictionary into readable string."""
+        """Format context dictionary into readable string for AI."""
+        if not context:
+            return ""
+
         parts = []
-        
-        if "project_type" in context:
-            parts.append(f"Tipo de proyecto identificado: {context['project_type']}")
-        
-        if "budget_range" in context:
-            parts.append(f"Rango de presupuesto: {context['budget_range']}")
-        
-        if "timeline" in context:
-            parts.append(f"Timeline: {context['timeline']}")
-        
-        if "location" in context:
-            parts.append(f"Ubicación: {context['location']}")
-        
-        return ". ".join(parts) if parts else ""
+
+        # Información del lead ya capturada
+        if context.get("project_type"):
+            parts.append(f"[CAPTURADO] Tipo de proyecto: {context['project_type']}")
+
+        if context.get("budget"):
+            budget = context['budget']
+            if budget >= 1000:
+                budget_str = f"{int(budget/1000)}k EUR"
+            else:
+                budget_str = f"{int(budget)} EUR"
+            parts.append(f"[CAPTURADO] Presupuesto: {budget_str}")
+
+        if context.get("timeline"):
+            parts.append(f"[CAPTURADO] Timeline: {context['timeline']}")
+
+        if context.get("location"):
+            parts.append(f"[CAPTURADO] Ubicación: {context['location']}")
+
+        if context.get("name"):
+            parts.append(f"[CAPTURADO] Nombre: {context['name']}")
+
+        if context.get("email") or context.get("phone"):
+            contact_methods = []
+            if context.get("email"):
+                contact_methods.append(f"email ({context['email']})")
+            if context.get("phone"):
+                contact_methods.append(f"teléfono ({context['phone']})")
+            parts.append(f"[CAPTURADO] Contacto: {', '.join(contact_methods)}")
+
+        # Información sobre qué falta
+        missing = []
+        if not context.get("budget"):
+            missing.append("presupuesto")
+        if not context.get("timeline"):
+            missing.append("timeline")
+        if not context.get("location"):
+            missing.append("ubicación")
+        if not context.get("email") and not context.get("phone"):
+            missing.append("contacto (email o teléfono)")
+
+        if missing:
+            parts.append(f"[PENDIENTE] Aún falta: {', '.join(missing)}")
+
+        # Score del lead y estrategia
+        if context.get("lead_score"):
+            score = context["lead_score"]
+            category = context.get("lead_category", "unknown")
+            parts.append(f"[CUALIFICACIÓN] Score: {score}/100 (categoría: {category})")
+
+            # Dar orientación estratégica basada en categoría
+            if category == "hot":
+                parts.append("[ACCIÓN RECOMENDADA] Lead caliente - Prioriza obtención de contacto si aún no lo tienes")
+            elif category == "warm":
+                parts.append("[ACCIÓN RECOMENDADA] Lead tibio - Profundiza en detalles técnicos y valida presupuesto")
+            else:
+                parts.append("[ACCIÓN RECOMENDADA] Lead frío - Aporta valor y construye confianza")
+
+        result = "\n".join(parts) if parts else ""
+
+        if result:
+            header = "=" * 60
+            footer = "=" * 60
+            return f"\n{header}\nCONTEXTO DE CUALIFICACIÓN DEL LEAD\n{header}\n\n{result}\n\n{footer}\n\nINSTRUCCIONES:\n- NO preguntes por información ya capturada\n- Reconoce explícitamente lo que el usuario te ha dicho\n- Continúa la conversación de forma natural y consultiva\n- Sigue la acción recomendada según la categoría del lead\n{footer}\n"
+
+        return ""
     
     def extract_information(self, message_text: str, lead: Lead) -> None:
         """Extract structured information from user message and update lead."""
         text_lower = message_text.lower()
-        
+
+        # Guardar valores anteriores para detectar cambios
+        old_budget = lead.budget
+        old_timeline = lead.timeline
+        old_location = lead.location
+
         # Extract project type
         self._extract_project_type(text_lower, lead)
-        
+
         # Extract budget
         self._extract_budget(message_text, lead)
-        
+
         # Extract timeline
         self._extract_timeline(text_lower, lead)
-        
+
         # Extract location
         self._extract_location(message_text, lead)
-        
+
         # Extract contact info
         self._extract_contact_info(message_text, lead)
-        
+
         # Update qualification flags
         lead.has_defined_project = lead.project_type is not None
         lead.has_budget = lead.budget is not None
         lead.has_timeline = lead.timeline is not None
         lead.has_location = lead.location is not None
         lead.contact_complete = all([lead.name, lead.email or lead.phone])
-        
+
         # Recalculate score
         lead.score = lead.calculate_score()
         lead.update_category()
+
+        # Log what was extracted for debugging
+        if lead.budget != old_budget:
+            logger.info(f"Extracted budget: {lead.budget}")
+        if lead.timeline != old_timeline:
+            logger.info(f"Extracted timeline: {lead.timeline}")
+        if lead.location != old_location:
+            logger.info(f"Extracted location: {lead.location}")
     
     def _extract_project_type(self, text: str, lead: Lead) -> None:
         """Extract project type from text."""
@@ -228,88 +400,198 @@ Recuerda: Tu objetivo es conseguir suficiente información para que un arquitect
     def _extract_budget(self, text: str, lead: Lead) -> None:
         """Extract budget from text using regex."""
         patterns = [
-            r'(\d{1,3}(?:[.,]\d{3})*)\s*€',
-            r'(\d+)k\s*€',
-            r'€\s*(\d{1,3}(?:[.,]\d{3})*)',
-            r'(\d+)\s*mil\s*€',
+            # Con símbolos de moneda
+            r'(\d{1,3}(?:[.,]\d{3})*)\s*[€$]',
+            r'[€$]\s*(\d{1,3}(?:[.,]\d{3})*)',
+            # Con palabras (euros, eur, dólares, etc.)
+            r'(\d{1,3}(?:[.,]\d{3})*)\s*(?:euros?|eur|dólares?|usd|dolares?)',
+            # Con K (30k, 50K, etc.)
+            r'(\d+)[kK]\s*(?:[€$]|euros?|eur)?',
+            # Con "mil" (30 mil, 50 mil euros, etc.)
+            r'(\d+)\s*mil\s*(?:[€$]|euros?|eur)?',
+            # Solo números grandes (más de 1000, probablemente presupuesto)
+            r'\b(\d{4,})\b',
         ]
-        
+
         for pattern in patterns:
-            match = re.search(pattern, text)
+            match = re.search(pattern, text, re.IGNORECASE)
             if match:
                 budget_str = match.group(1).replace('.', '').replace(',', '')
                 try:
                     budget = float(budget_str)
-                    if 'k' in text.lower():
+
+                    # Aplicar multiplicadores
+                    if re.search(r'\d+[kK]', text):
                         budget *= 1000
-                    if 'mil' in text.lower() and budget < 1000:
+                    elif 'mil' in text.lower() and budget < 1000:
                         budget *= 1000
-                    
-                    lead.budget = budget
-                    break
+
+                    # Solo aceptar si parece un presupuesto razonable (500€ - 10M€)
+                    if 500 <= budget <= 10_000_000:
+                        lead.budget = budget
+                        break
                 except ValueError:
                     continue
     
     def _extract_timeline(self, text: str, lead: Lead) -> None:
-        """Extract timeline from text."""
-        timeline_patterns = {
-            "inmediato": 1,
-            "urgente": 1,
-            "ya": 1,
-            "1 mes": 1,
-            "2 meses": 2,
-            "3 meses": 3,
-            "6 meses": 6,
-            "1 año": 12,
-            "este año": 6,
-            "próximo año": 12,
-        }
-        
-        for phrase, months in timeline_patterns.items():
-            if phrase in text:
-                lead.timeline = phrase
-                lead.timeline_months = months
+        """Extract timeline from text using flexible pattern matching."""
+        text_lower = text.lower()
+
+        # Patrones más flexibles con regex
+        timeline_rules = [
+            # Inmediato/urgente
+            (r'\b(inmediato|urgente|ya|ahora|cuanto antes)\b', "inmediato", 1),
+            # Meses específicos
+            (r'\b(?:en\s+)?(?:los?\s+)?(?:próximos?\s+)?([1-3])\s*mes(?:es)?\b', None, None),  # 1-3 meses
+            (r'\b(?:en\s+)?(?:los?\s+)?(?:próximos?\s+)?([4-6])\s*mes(?:es)?\b', None, None),  # 4-6 meses
+            (r'\b(?:en\s+)?(?:los?\s+)?(?:próximos?\s+)?([7-9]|1[0-2])\s*mes(?:es)?\b', None, None),  # 7-12 meses
+            # Rangos de meses
+            (r'\b(?:entre\s+)?3\s*-?\s*6\s*mes(?:es)?\b', "3-6 meses", 4),
+            (r'\b(?:entre\s+)?6\s*-?\s*12\s*mes(?:es)?\b', "6-12 meses", 9),
+            # Años
+            (r'\b(?:en\s+)?(?:un\s+)?(?:1\s+)?año\b', "1 año", 12),
+            (r'\b(?:el\s+)?(?:este\s+)?año\b', "este año", 6),
+            (r'\b(?:el\s+)?(?:próximo|siguiente)\s+año\b', "próximo año", 12),
+            # Opciones del menú del bot
+            (r'explor(?:ando|ar)\s+(?:las?\s+)?opcion(?:es)?', "explorando opciones", 12),
+            (r'solo\s+(?:estoy\s+)?explor', "explorando opciones", 12),
+            (r'no\s+(?:tengo\s+)?prisa', "sin prisa", 12),
+            # Respuestas tipo "4" cuando hay opciones de menú
+            (r'^\s*[4]\s*$', "explorando opciones", 12),
+            (r'^\s*[1]\s*$', "3 meses", 3),
+            (r'^\s*[2]\s*$', "3-6 meses", 4),
+            (r'^\s*[3]\s*$', "6-12 meses", 9),
+        ]
+
+        for pattern, label, months in timeline_rules:
+            match = re.search(pattern, text_lower)
+            if match:
+                # Si el patrón captura un grupo (número de meses), úsalo
+                if match.groups() and match.group(1).isdigit():
+                    months_num = int(match.group(1))
+                    lead.timeline = f"{months_num} meses"
+                    lead.timeline_months = months_num
+                else:
+                    lead.timeline = label
+                    lead.timeline_months = months
                 break
     
     def _extract_location(self, text: str, lead: Lead) -> None:
-        """Extract location from text."""
-        locations = ["vigo", "pontevedra", "coruña", "ourense", "lugo", "santiago",
-                    "ferrol", "baiona", "cangas", "porriño", "redondela"]
-        
-        for location in locations:
-            if location in text:
+        """Extract location from text with flexible matching."""
+        text_lower = text.lower()
+
+        # Ciudades principales de Galicia
+        main_cities = {
+            "vigo": ["vigo", "vigués", "viguesa"],
+            "pontevedra": ["pontevedra", "pontevedrés"],
+            "coruña": ["coruña", "a coruña", "la coruña", "corunés"],
+            "ourense": ["ourense", "orense", "ourensán"],
+            "lugo": ["lugo", "lugués"],
+            "santiago": ["santiago", "compostela", "compostelano"],
+            "ferrol": ["ferrol", "ferrolano"],
+        }
+
+        # Barrios y zonas de Vigo (más común en arquitectura)
+        vigo_zones = [
+            "urzaiz", "coia", "samil", "bouzas", "teis", "centro", "calvario",
+            "travesia", "castrelos", "beade", "coruxo", "oia", "navia",
+            "candeán", "cabral", "lavadores", "alcabre", "matama"
+        ]
+
+        # Otras localidades gallegas
+        other_locations = [
+            "baiona", "cangas", "porriño", "redondela", "moaña", "nigrán",
+            "gondomar", "mos", "soutomaior", "vilaboa"
+        ]
+
+        # 1. Buscar ciudades principales
+        for city, variations in main_cities.items():
+            for variation in variations:
+                if variation in text_lower:
+                    lead.location = city.capitalize()
+                    return
+
+        # 2. Buscar barrios de Vigo (si menciona un barrio, asumimos Vigo)
+        for zone in vigo_zones:
+            if zone in text_lower:
+                lead.location = f"Vigo - {zone.capitalize()}"
+                return
+
+        # 3. Buscar otras localidades
+        for location in other_locations:
+            if location in text_lower:
                 lead.location = location.capitalize()
-                break
+                return
+
+        # 4. Detectar si menciona "aquí", "mi ciudad", etc. (guardar el texto original)
+        generic_locations = ["aquí", "mi ciudad", "donde vivo", "mi zona"]
+        for generic in generic_locations:
+            if generic in text_lower:
+                lead.location = "Por confirmar"
+                return
+
+        # 5. Si contiene "avenida", "calle", "rúa", probablemente es una dirección
+        if any(word in text_lower for word in ["avenida", "calle", "rúa", "rua", "plaza"]):
+            # Extraer parte de la dirección para guardarla
+            lead.location = text[:100]  # Guardar primeros 100 caracteres
+            return
     
     def _extract_contact_info(self, text: str, lead: Lead) -> None:
-        """Extract contact information from text."""
+        """Extract and validate contact information from text."""
         # Extract email
         email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
         email_match = re.search(email_pattern, text)
         if email_match:
-            lead.email = email_match.group(0)
-        
+            try:
+                validated_email = InputValidator.validate_email(email_match.group(0))
+                if validated_email:
+                    lead.email = validated_email
+                    logger.info(f"Extracted and validated email: {validated_email}")
+            except ValueError as e:
+                logger.warning(f"Invalid email format detected: {email_match.group(0)} - {e}")
+
         # Extract phone
         phone_patterns = [
-            r'\b([6-9]\d{8})\b',
-            r'\b(\+34\s*[6-9]\d{8})\b',
-            r'\b(34\s*[6-9]\d{8})\b',
+            r'\b([6-9]\d{8})\b',  # Spanish mobile without prefix
+            r'\b(\+34\s*[6-9]\d{8})\b',  # Spanish mobile with +34
+            r'\b(34\s*[6-9]\d{8})\b',  # Spanish mobile with 34
+            r'\b(\+\d{1,3}\s*\d{6,14})\b',  # International format
         ]
-        
+
         for pattern in phone_patterns:
             phone_match = re.search(pattern, text)
             if phone_match:
-                lead.phone = phone_match.group(1)
-                break
-        
-        # Extract name (basic)
+                raw_phone = phone_match.group(1)
+                try:
+                    # Normalize Spanish numbers
+                    if not raw_phone.startswith('+'):
+                        if raw_phone.startswith('34'):
+                            raw_phone = '+' + raw_phone
+                        elif len(raw_phone) == 9:
+                            raw_phone = '+34' + raw_phone
+
+                    validated_phone = InputValidator.validate_phone(raw_phone)
+                    if validated_phone:
+                        lead.phone = validated_phone
+                        logger.info(f"Extracted and validated phone: {validated_phone}")
+                        break
+                except ValueError as e:
+                    logger.warning(f"Invalid phone format detected: {raw_phone} - {e}")
+
+        # Extract name (basic) - sanitize to prevent XSS
         name_indicators = ["me llamo", "mi nombre es", "soy", "mi nombre:", "nombre:"]
         for indicator in name_indicators:
             if indicator in text.lower():
                 parts = text.lower().split(indicator)
                 if len(parts) > 1:
                     potential_name = parts[1].strip().split()[0:3]
-                    lead.name = " ".join(potential_name).strip(',.;')
+                    raw_name = " ".join(potential_name).strip(',.;')
+                    try:
+                        sanitized_name = InputValidator.sanitize_text_field(raw_name, max_length=200)
+                        lead.name = sanitized_name
+                        logger.info(f"Extracted name: {sanitized_name}")
+                    except ValueError as e:
+                        logger.warning(f"Invalid name format: {raw_name} - {e}")
                     break
     
     def should_request_contact(self, lead: Lead) -> bool:

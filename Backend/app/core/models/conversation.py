@@ -2,7 +2,7 @@
 Conversation model - Represents a chat session.
 """
 
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, JSON
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, JSON, Index
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
@@ -13,8 +13,21 @@ class Conversation(Base):
     """
     Conversation model representing a chat session.
     """
-    
+
     __tablename__ = "conversations"
+
+    # Define indexes for performance
+    __table_args__ = (
+        # Index for finding active conversations
+        Index('idx_conv_active_last_msg', 'is_active', 'last_message_at'),
+        # Index for finding conversations by lead
+        Index('idx_conv_lead_started', 'lead_id', 'started_at'),
+        # Index for analytics queries
+        Index('idx_conv_channel_started', 'channel', 'started_at'),
+        # Partial index for active conversations only
+        Index('idx_conv_active_only', 'session_id', 'last_message_at',
+              postgresql_where="is_active = true"),
+    )
     
     # Primary Key
     id = Column(Integer, primary_key=True, index=True)

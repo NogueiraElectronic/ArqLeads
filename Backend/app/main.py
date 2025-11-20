@@ -10,16 +10,41 @@ from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import logging
 import time
+import structlog
+
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.core.config import settings
 from app.core.database import init_db, check_database_health
+from app.core.rate_limit import limiter
+from app.core.security import SecurityHeadersMiddleware, HTTPSRedirectMiddleware
 
-# Configure logging
+# Configure structured logging
+structlog.configure(
+    processors=[
+        structlog.stdlib.filter_by_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+        structlog.processors.UnicodeDecoder(),
+        structlog.processors.JSONRenderer() if settings.ENVIRONMENT == "production" else structlog.dev.ConsoleRenderer(),
+    ],
+    context_class=dict,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    cache_logger_on_first_use=True,
+)
+
+# Basic logging for startup
 logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 @asynccontextmanager
@@ -62,6 +87,10 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Add rate limiter to app state
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -71,19 +100,61 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add security middlewares
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(HTTPSRedirectMiddleware)
+
+# Add compression middleware
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# Add request logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log all HTTP requests with timing and status."""
+    start_time = time.time()
+
+    # Log request
+    logger.info(
+        "request_started",
+        method=request.method,
+        path=request.url.path,
+        client=request.client.host if request.client else "unknown"
+    )
+
+    # Process request
+    try:
+        response = await call_next(request)
+        duration_ms = int((time.time() - start_time) * 1000)
+
+        # Log response
+        logger.info(
+            "request_completed",
+            method=request.method,
+            path=request.url.path,
+            status_code=response.status_code,
+            duration_ms=duration_ms
+        )
+
+        # Add timing header
+        response.headers["X-Process-Time"] = str(duration_ms)
+        return response
+
+    except Exception as e:
+        duration_ms = int((time.time() - start_time) * 1000)
+        logger.error(
+            "request_failed",
+            method=request.method,
+            path=request.url.path,
+            duration_ms=duration_ms,
+            error=str(e)
+        )
+        raise
+
 # Add Gzip compression
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-
-# Request timing middleware
-@app.middleware("http")
-async def add_process_time_header(request: Request, call_next):
-    """Add processing time to response headers."""
-    start_time = time.time()
-    response = await call_next(request)
-    process_time = time.time() - start_time
-    response.headers["X-Process-Time"] = str(process_time)
-    return response
+# Add Prometheus metrics instrumentation
+Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 
 # Global exception handler
@@ -141,6 +212,7 @@ async def ping():
 from app.api.chat import router as chat_router
 from app.api.leads import router as leads_router
 from app.api.analytics import router as analytics_router
+from app.api.admin import router as admin_router
 
 # Mount API routers
 app.include_router(
@@ -159,6 +231,11 @@ app.include_router(
     analytics_router,
     prefix=f"{settings.API_V1_STR}/analytics",
     tags=["Analytics"]
+)
+
+app.include_router(
+    admin_router,
+    tags=["Admin"]
 )
 
 

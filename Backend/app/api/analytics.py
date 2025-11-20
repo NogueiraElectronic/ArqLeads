@@ -3,7 +3,7 @@ Analytics API endpoints.
 Provides insights and statistics about leads and conversations.
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from pydantic import BaseModel
@@ -14,6 +14,8 @@ import logging
 from app.core.database import get_db
 from app.core.models.lead import Lead, LeadCategory, LeadStatus
 from app.core.models.conversation import Conversation
+from app.core.rate_limit import limiter
+
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
@@ -25,7 +27,9 @@ class TimeSeriesDataPoint(BaseModel):
 
 
 @router.get("/dashboard")
+@limiter.limit("30/minute")
 async def get_dashboard_analytics(
+    request: Request,
     days: int = Query(30, ge=1, le=365),
     db: Session = Depends(get_db)
 ):
